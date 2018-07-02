@@ -1,3 +1,0 @@
-[submodule "device"]
-	path = device
-	url = https://github.com/KopfLab/labware_photon
