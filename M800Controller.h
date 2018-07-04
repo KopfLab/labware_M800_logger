@@ -5,7 +5,9 @@
 
 // serial communication constants
 #define M800_DATA_REQUEST  "D00Z" // data request command
-#define M800_DATA_N_MAX    12 // NOTE: consider making this dynamic
+#define M800_DATA_N_MAX    9
+// NOTE: consider making this dynamic but keep in mind that around 12 the 600 chars overflow!
+// FIXME: not unusal to have 12 variables from the M800 (4 devices x 3 vars, what to do in this case?)
 
 // controll information
 #define RS485TxControl    D3
@@ -13,6 +15,8 @@
 #define RS485Transmit     HIGH
 #define RS485Receive      LOW
 #define RS485SerialConfig SERIAL_8N1
+#define M800_DATA_DELIM 		   9  // value/variable pair delimiter (tab)
+#define M800_DATA_END         13 // end of data stream (return character)
 
 // controller class
 class M800Controller : public SerialDeviceController {
@@ -24,10 +28,15 @@ class M800Controller : public SerialDeviceController {
     SerialDeviceState* dss = state;
     DeviceState* ds = state;
 
-
     // serial communication
     int data_pattern_pos;
+    int var_used;
+    int var_counter;
+    bool expect_value_next;
     void construct();
+
+    // display
+    char lcd_buffer[21];
 
   public:
 
@@ -48,8 +57,12 @@ class M800Controller : public SerialDeviceController {
     // serial
     void sendRequestCommand();
     void startSerialData();
+    bool checkVariableBuffer(const char* pattern, bool units_first = false);
     int processSerialData(byte b);
-    void completeSerialData();
+    void completeSerialData(int error_count);
+
+    // data
+    void updateDataInformation();
 
     // state
     void assembleStateInformation();
@@ -60,6 +73,8 @@ class M800Controller : public SerialDeviceController {
 
     // particle commands
     void parseCommand (); // parse a cloud command
+    bool parsePage();
+    bool nextPage();
 
 };
 
@@ -73,6 +88,18 @@ void M800Controller::construct() {
     data[i] = DeviceData(i+1);
   }
 
+  // FIXME: this should essentially be possible restored from state and changred by command
+  int i=0;
+  data[i].setVariable("pH"); data[i++].setUnits("");
+  data[i].setVariable("ORP"); data[i++].setUnits("mV");
+  data[i].setVariable("T"); data[i++].setUnits("DegC");
+  data[i].setVariable("pH"); data[i++].setUnits("");
+  data[i].setVariable("ORP"); data[i++].setUnits("mV");
+  data[i].setVariable("T"); data[i++].setUnits("DegC");
+  data[i].setVariable("O2"); data[i++].setUnits("mg/L");
+  data[i].setVariable("O2"); data[i++].setUnits("nA");
+  data[i].setVariable("T"); data[i++].setUnits("DegC");
+  var_used = i;
 }
 
 // init function
@@ -91,34 +118,21 @@ void M800Controller::sendRequestCommand() {
   digitalWrite(RS485TxControl, RS485Receive);
 }
 
-/* // FIXME
-
-// pattern pieces
-#define P_VAL       -1 // [ +-0-9]
-#define P_UNIT      -2 // [GOC]
-#define P_STABLE    -3 // [ S]
-#define P_BYTE       0 // anything > 0 is specific byte
-
-// specific ascii characters (actual byte values)
-#define B_SPACE      32 // \\s
-#define B_CR         13 // \r
-#define B_NL         10 // \n
-#define B_0          48 // 0
-#define B_9          57 // 9
-
-const int data_pattern[] = {P_VAL, P_VAL, P_VAL, P_VAL, P_VAL, P_VAL, P_VAL, P_VAL, P_VAL, B_SPACE, B_SPACE, P_UNIT, P_STABLE, B_CR, B_NL};
-const int data_pattern_size = sizeof(data_pattern) / sizeof(data_pattern[0]) - 1;
-
-*/ //FIXME
-
-#define DATA_DELIM 		   9  // value/variable pair delimiter (tab)
-#define DATA_END         13 // end of data stream (return character)
-#define DATA_SEP         44 // user's choice, 124 is the pipe (|), 44 is comma (,)
-
-
 void M800Controller::startSerialData() {
   SerialDeviceController::startSerialData();
-  //data_pattern_pos = 0; // FIXME
+  var_counter = 0;
+  expect_value_next = false;
+}
+
+bool M800Controller::checkVariableBuffer(const char* pattern, bool units_first) {
+  char var_units_buffer[20];
+  if (units_first)
+    snprintf(var_units_buffer, sizeof(var_units_buffer), pattern,
+      data[var_counter - 2].units, data[var_counter - 2].variable);
+  else
+    snprintf(var_units_buffer, sizeof(var_units_buffer), pattern,
+      data[var_counter - 2].variable, data[var_counter - 2].units);
+  return (strcmp(variable_buffer, var_units_buffer) == 0);
 }
 
 int M800Controller::processSerialData(byte b) {
@@ -130,50 +144,101 @@ int M800Controller::processSerialData(byte b) {
 
   if (c == 0) {
     // do nothing when 0 character encountered
-  } else if (c == DATA_DELIM) {
+  } else if (c == M800_DATA_DELIM) {
     // end of value or variable
-    /* FIXME
-    if (variable_counter == 0)
-      temp_message += " "; // space between date and time
-    else
-      temp_message += (char) DATA_SEP;
-    variable_counter++; // first real value/variable pair found
-    */
+    bool valid_char = true;
+    if (var_counter == 0) {
+      // date
+      var_counter++;
+      expect_value_next = false;
+    } else if (var_counter == 1) {
+      // time
+      var_counter++;
+      expect_value_next = true;
+    } else if (expect_value_next) {
+      // variable finished, value next
+      expect_value_next = false;
+    } else {
+      // value/variable pair finished --> check variable
+      bool valid_key = checkVariableBuffer("%s");
+      if (!valid_key) valid_key = checkVariableBuffer("%s", true);
+      if (!valid_key) valid_key = checkVariableBuffer("%s %s", true);
+      if (!valid_key) valid_key = checkVariableBuffer("%s%s", true);
+      // --> check value
+      bool valid_value = data[var_counter - 2].setNewestValue(value_buffer, true, true, 1L);
+      // check if problem requires throwing an error
+      if (!valid_value) {
+        if (strcmp(value_buffer, "----  ") == 0) valid_value = true;
+        if (strcmp(value_buffer, "****  ") == 0) valid_value = true;
+        // not entirely clear why this might happen but it is a frequent pattern
+        if (strcmp(value_buffer, "KKKKJ") == 0) valid_value = true;
+      }
+      if (!valid_key || !valid_value) valid_char = false;
+
+      // debugging info
+      #ifdef SERIAL_DEBUG_ON
+        appendToSerialDataBuffer(124);
+        appendToSerialDataBuffer(75);
+        if (valid_key) appendToSerialDataBuffer(71);
+        else appendToSerialDataBuffer(66);
+        appendToSerialDataBuffer(86);
+        if (valid_value) appendToSerialDataBuffer(71);
+        else appendToSerialDataBuffer(66);
+      #endif
+
+      if (!valid_char) {
+        // problem with value/var pair
+        error_counter++;
+        Serial.printf("WARNING: problem %d with serial data for key/variable pair: %s = %s\n", error_counter, variable_buffer, value_buffer);
+        snprintf(lcd_buffer, sizeof(lcd_buffer), "M800: %d value error", error_counter);
+        if (lcd) lcd->printLineTemp(1, lcd_buffer);
+      }
+
+      // reset for next value/variable pair
+      appendToSerialDataBuffer(44); // add a comma to buffer for easier readability
+      resetSerialVariableBuffer();
+      resetSerialValueBuffer();
+      var_counter++;
+      // value next
+      expect_value_next = true;
+    }
+
   } else if (c >= 32 && c <= 126) {
     // only consider regular ASCII range
-    // temp_message += (char) c; // FIXME
-  } else if (c == DATA_END) {
+    if (var_counter >= 2) {
+      // donce with date & time
+      if (expect_value_next) appendToSerialValueBuffer(c);
+      else appendToSerialVariableBuffer(c);
+    }
+  } else if (c == M800_DATA_END) {
     // end of the data transmission
-    /* FIXME
-    message_received = true;
-
-    if (message_error) {
-      // message received but there were errors in it!
-      Serial.println("ignored because of ERRORS. Partial message:");
-      Serial.println(temp_message);
-    } else {
-      // no errors, make this the new message
-      last_message = temp_message;
-      last_message_time = Time.now();
-      Serial.print("SUCCESSFULLY retrieved with ");
-      Serial.println(String(variable_counter/2) + " variable/value pairs:");
-      Serial.println(last_message);
-    }*/
+    #ifdef SERIAL_DEBUG_ON
+      appendToSerialDataBuffer(124);
+      if (var_counter - 2 == var_used) {
+        appendToSerialDataBuffer(89);
+      } else {
+        appendToSerialDataBuffer(78);
+      }
+    #endif
+    if (var_counter - 2 != var_used) {
+      Serial.printf("WARNING: failed to receive expected number (%d) of value/variable pairs, only %d\n", var_counter - 2, var_used);
+      if (lcd) lcd->printLineTemp(1, "M800: incomplete msg");
+      error_counter++;
+    }
     return(SERIAL_DATA_COMPLETE);
   } else {
-    // unrecognized part of data --> error
-    return(SERIAL_DATA_ERROR);
+    // unrecognized part of data --> ignore (happens too frequently to throw an error)
+    //return(SERIAL_DATA_ERROR);
   }
 
   return(SERIAL_DATA_WAITING);
 }
 
-void M800Controller::completeSerialData() {
-  for (int i=0; i<M800_DATA_N_MAX; i++) {
-    if (data[i].newest_value_valid)
-      data[i].saveNewestValue(true); // average for all valid data
+void M800Controller::completeSerialData(int error_count) {
+  // only save values if all of them where received properly
+  if (error_count == 0) {
+    for (int i=0; i<var_used; i++) data[i].saveNewestValue(true); // average for all valid data
   }
-  SerialDeviceController::completeSerialData();
 }
 
 /****** STATE INFORMATION *******/
@@ -183,6 +248,26 @@ void M800Controller::assembleStateInformation() {
   char pair[60];
 }
 
+
+/***** DATA INFORMATION ****/
+
+void M800Controller::updateDataInformation() {
+  SerialDeviceController::updateDataInformation();
+  if (lcd) {
+    int i;
+    for (int line = 2; line <= 4; line++) {
+      i = (state->page-1) * 3 + line - 2;
+      if (i < var_used) {
+        if (data[i].getN() > 0)
+          getDataDoubleText(data[i].idx, data[i].variable, data[i].getValue(), data[i].units, data[i].getN(),
+            lcd_buffer, sizeof(lcd_buffer), PATTERN_IKVUN_SIMPLE, data[i].getDecimals());
+        else
+          getInfoIdxKeyValue(lcd_buffer, sizeof(lcd_buffer), data[i].idx, data[i].variable, "no data yet", PATTERN_IKV_SIMPLE);
+        lcd->printLine(line, String(lcd_buffer));
+      }
+    }
+  }
+}
 
 /**** STATE PERSISTENCE ****/
 
@@ -222,4 +307,27 @@ void M800Controller::parseCommand() {
 
   // more additional, device specific commands
 
+}
+
+bool M800Controller::parsePage() {
+  if (command.parseVariable(CMD_PAGE)) {
+    // just page by one
+    command.success(nextPage());
+  }
+  return(command.isTypeDefined());
+}
+
+bool M800Controller::nextPage() {
+
+  int max_pages = floor(var_used / 3.0);
+  state->page = (state->page + 1) % max_pages;
+  updateDataInformation();
+
+  #ifdef STATE_DEBUG_ON
+    Serial.printf("INFO: flipping to next page (%d) on LCD %d\n", state->page);
+  #endif
+
+  saveDS();
+
+  return(true);
 }

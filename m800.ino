@@ -10,12 +10,12 @@ TimeSync* ts = new TimeSync();
 #define WEBHOOKS_DEBUG_ON
 //#define STATE_DEBUG_ON
 #define DATA_DEBUG_ON
-#define SERIAL_DEBUG_ON
+//#define SERIAL_DEBUG_ON
 //#define LCD_DEBUG_ON
 
 // keep track of installed version
-#define STATE_VERSION    1 // update whenver structure changes
-#define DEVICE_VERSION  "0.2.1" // update with every code update
+#define STATE_VERSION    3 // update whenver structure changes
+#define DEVICE_VERSION  "0.2.7" // update with every code update
 
 // M800 controller
 #include "M800Controller.h"
@@ -28,9 +28,9 @@ M800State* state = new M800State(
   /* locked */                    false,
   /* state_logging */             true,
   /* data_logging */              false,
-  /* data_reading_period_min */   1000, // in ms
+  /* data_reading_period_min */   2000, // in ms
   /* data_reading_period */       5000, // in ms
-  /* data_logging_period */       3600, // in seconds
+  /* data_logging_period */       600, // in seconds
   /* data_logging_type */         LOG_BY_TIME // log by time
 );
 
@@ -42,17 +42,10 @@ M800Controller* M800 = new M800Controller(
   /* pointer to state */  state
 );
 
-// user interface
-char lcd_buffer[21];
-
 void update_gui_state() {
 }
 
 void update_gui_data() {
-  // lcd
-  if (lcd) {
-    // FIXME
-  }
 }
 
 // callback function for commands
@@ -81,7 +74,7 @@ void setup() {
   ts->init();
 
   // lcd temporary messages
-  lcd->setTempTextShowTime(4); // how many seconds temp time
+  lcd->setTempTextShowTime(3); // how many seconds temp time
 
   // M800
   Serial.println("INFO: initialize M800 version " + String(DEVICE_VERSION));
@@ -95,7 +88,9 @@ void setup() {
 
   // initial user interface update
   update_gui_state();
-  update_gui_data();
+  update_gui_data(
+
+  );
 
 }
 
