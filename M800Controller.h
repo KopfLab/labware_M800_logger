@@ -161,8 +161,8 @@ int M800Controller::processSerialData(byte b) {
       if (!valid_key) valid_key = checkVariableBuffer("%s", true);
       if (!valid_key) valid_key = checkVariableBuffer("%s %s", true);
       if (!valid_key) valid_key = checkVariableBuffer("%s%s", true);
-      // --> set / check value (infer decimals + 2 for better precision)
-      bool valid_value = data[var_counter - 2].setNewestValue(value_buffer, true, true, 2L);
+      // --> set / check value (infer decimals with 1 extra decimal since the M800 can set its digits to a reasonble precision already)
+      bool valid_value = data[var_counter - 2].setNewestValue(value_buffer, true, true, 1L);
       // check if problem requires throwing an error
       if (!valid_value) {
         if (strcmp(value_buffer, "----  ") == 0) valid_value = true;

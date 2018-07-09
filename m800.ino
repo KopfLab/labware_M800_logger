@@ -15,7 +15,7 @@ TimeSync* ts = new TimeSync();
 
 // keep track of installed version
 #define STATE_VERSION    3 // update whenver structure changes
-#define DEVICE_VERSION  "0.3.3" // update with every code update
+#define DEVICE_VERSION  "0.3.4" // update with every code update
 
 // M800 controller
 #include "M800Controller.h"
