@@ -7,7 +7,7 @@ TimeSync* ts = new TimeSync();
 
 // debugging options
 #define CLOUD_DEBUG_ON
-#define WEBHOOKS_DEBUG_ON
+//#define WEBHOOKS_DEBUG_ON
 //#define STATE_DEBUG_ON
 #define DATA_DEBUG_ON
 //#define SERIAL_DEBUG_ON
@@ -15,7 +15,7 @@ TimeSync* ts = new TimeSync();
 
 // keep track of installed version
 #define STATE_VERSION    3 // update whenver structure changes
-#define DEVICE_VERSION  "0.2.7" // update with every code update
+#define DEVICE_VERSION  "0.3.3" // update with every code update
 
 // M800 controller
 #include "M800Controller.h"
@@ -42,22 +42,6 @@ M800Controller* M800 = new M800Controller(
   /* pointer to state */  state
 );
 
-void update_gui_state() {
-}
-
-void update_gui_data() {
-}
-
-// callback function for commands
-void report_command () {
-  update_gui_state();
-  update_gui_data();
-}
-
-// callback function for data
-void report_data() {
-  update_gui_data();
-}
 
 // using system threading to speed up restart after power out
 SYSTEM_THREAD(ENABLED);
@@ -68,7 +52,6 @@ void setup() {
 
   // serial
   Serial.begin(9600);
-  delay(1000);
 
   // time sync
   ts->init();
@@ -78,19 +61,11 @@ void setup() {
 
   // M800
   Serial.println("INFO: initialize M800 version " + String(DEVICE_VERSION));
-  M800->setCommandCallback(report_command);
-  M800->setDataCallback(report_data);
   M800->init();
 
   // connect device to cloud
   Serial.println("INFO: connecting to cloud");
   Particle.connect();
-
-  // initial user interface update
-  update_gui_state();
-  update_gui_data(
-
-  );
 
 }
 

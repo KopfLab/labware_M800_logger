@@ -35,9 +35,6 @@ class M800Controller : public SerialDeviceController {
     bool expect_value_next;
     void construct();
 
-    // display
-    char lcd_buffer[21];
-
   public:
 
     // constructors
@@ -164,8 +161,8 @@ int M800Controller::processSerialData(byte b) {
       if (!valid_key) valid_key = checkVariableBuffer("%s", true);
       if (!valid_key) valid_key = checkVariableBuffer("%s %s", true);
       if (!valid_key) valid_key = checkVariableBuffer("%s%s", true);
-      // --> check value
-      bool valid_value = data[var_counter - 2].setNewestValue(value_buffer, true, true, 1L);
+      // --> set / check value (infer decimals + 2 for better precision)
+      bool valid_value = data[var_counter - 2].setNewestValue(value_buffer, true, true, 2L);
       // check if problem requires throwing an error
       if (!valid_value) {
         if (strcmp(value_buffer, "----  ") == 0) valid_value = true;
@@ -253,17 +250,21 @@ void M800Controller::assembleStateInformation() {
 
 void M800Controller::updateDataInformation() {
   SerialDeviceController::updateDataInformation();
+  // LCD update
   if (lcd) {
+
     int i;
     for (int line = 2; line <= 4; line++) {
-      i = (state->page-1) * 3 + line - 2;
+      i = (state->page - 1) * 3 + line - 2;
       if (i < var_used) {
         if (data[i].getN() > 0)
           getDataDoubleText(data[i].idx, data[i].variable, data[i].getValue(), data[i].units, data[i].getN(),
             lcd_buffer, sizeof(lcd_buffer), PATTERN_IKVUN_SIMPLE, data[i].getDecimals());
         else
           getInfoIdxKeyValue(lcd_buffer, sizeof(lcd_buffer), data[i].idx, data[i].variable, "no data yet", PATTERN_IKV_SIMPLE);
-        lcd->printLine(line, String(lcd_buffer));
+        lcd->printLine(line, lcd_buffer);
+      } else {
+        lcd->printLine(line, "");
       }
     }
   }
@@ -303,6 +304,8 @@ void M800Controller::parseCommand() {
 
   if (command.isTypeDefined()) {
     // command processed successfully by parent function
+  } else if (parsePage()) {
+    // parse page command
   }
 
   // more additional, device specific commands
@@ -320,7 +323,7 @@ bool M800Controller::parsePage() {
 bool M800Controller::nextPage() {
 
   int max_pages = floor(var_used / 3.0);
-  state->page = (state->page + 1) % max_pages;
+  state->page = (state->page % max_pages) + 1;
   updateDataInformation();
 
   #ifdef STATE_DEBUG_ON
