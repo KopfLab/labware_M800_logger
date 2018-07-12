@@ -1,12 +1,11 @@
 #pragma once
-#include <vector>
 #include "M800State.h"
 #include "device/SerialDeviceController.h"
 
 // serial communication constants
 #define M800_DATA_REQUEST  "D00Z" // data request command
-#define M800_DATA_N_MAX    9
-// NOTE: consider making this dynamic but keep in mind that around 12 the 600 chars overflow!
+#define M800_DATA_N_MAX    12
+// NOTE: consider making this dynamic but keep in mind that around 12 the 600 chars overflow for state info!
 // FIXME: not unusal to have 12 variables from the M800 (4 devices x 3 vars, what to do in this case?)
 
 // controll information
@@ -95,6 +94,9 @@ void M800Controller::construct() {
   data[i].setVariable("T"); data[i++].setUnits("DegC");
   data[i].setVariable("O2"); data[i++].setUnits("mg/L");
   data[i].setVariable("O2"); data[i++].setUnits("nA");
+  data[i].setVariable("T"); data[i++].setUnits("DegC");
+  data[i].setVariable("pH"); data[i++].setUnits("");
+  data[i].setVariable("ORP"); data[i++].setUnits("mV");
   data[i].setVariable("T"); data[i++].setUnits("DegC");
   var_used = i;
 }
@@ -206,6 +208,9 @@ int M800Controller::processSerialData(byte b) {
       // donce with date & time
       if (expect_value_next) appendToSerialValueBuffer(c);
       else appendToSerialVariableBuffer(c);
+    } else {
+      // don't include the date and time in the data info string (otherwise overflow)
+      data_charcounter--;
     }
   } else if (c == M800_DATA_END) {
     // end of the data transmission
