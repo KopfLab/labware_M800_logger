@@ -89,12 +89,15 @@ void M800Controller::construct() {
   data[i].setVariable("pH"); data[i++].setUnits("");
   data[i].setVariable("ORP"); data[i++].setUnits("mV");
   data[i].setVariable("T"); data[i++].setUnits("DegC");
+
   data[i].setVariable("pH"); data[i++].setUnits("");
   data[i].setVariable("ORP"); data[i++].setUnits("mV");
   data[i].setVariable("T"); data[i++].setUnits("DegC");
+
   data[i].setVariable("O2"); data[i++].setUnits("mg/L");
-  data[i].setVariable("O2"); data[i++].setUnits("nA");
   data[i].setVariable("T"); data[i++].setUnits("DegC");
+  data[i].setVariable("O2"); data[i++].setUnits("nA");
+  
   data[i].setVariable("pH"); data[i++].setUnits("");
   data[i].setVariable("ORP"); data[i++].setUnits("mV");
   data[i].setVariable("T"); data[i++].setUnits("DegC");
