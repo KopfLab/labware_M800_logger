@@ -85,6 +85,7 @@ void M800Controller::construct() {
   }
 
   // FIXME: this should essentially be possible restored from state and changred by command
+  // Suggestion format for command: var=unit,var=unit,var=unit,etc.
   int i=0;
   data[i].setVariable("pH"); data[i++].setUnits("");
   data[i].setVariable("ORP"); data[i++].setUnits("mV");
@@ -97,7 +98,13 @@ void M800Controller::construct() {
   data[i].setVariable("O2"); data[i++].setUnits("mg/L");
   data[i].setVariable("T"); data[i++].setUnits("DegC");
   data[i].setVariable("O2"); data[i++].setUnits("nA");
-  
+
+  /*
+  data[i].setVariable("pH"); data[i++].setUnits("");
+  data[i].setVariable("ORP"); data[i++].setUnits("mV");
+  data[i].setVariable("T"); data[i++].setUnits("DegC");
+  */
+
   data[i].setVariable("pH"); data[i++].setUnits("");
   data[i].setVariable("ORP"); data[i++].setUnits("mV");
   data[i].setVariable("T"); data[i++].setUnits("DegC");
@@ -175,10 +182,18 @@ int M800Controller::processSerialData(byte b) {
         // not entirely clear why this might happen but it is a frequent pattern
         if (strcmp(value_buffer, "KKKKJ") == 0) valid_value = true;
       }
-      if (!valid_key || !valid_value) valid_char = false;
+
+      // if error with key, also make value invalid
+      if (!valid_key) data[var_counter - 2].setNewestValueInvalid();
+
+      // update char
+      valid_char = valid_key & valid_char;
 
       // debugging info
       #ifdef SERIAL_DEBUG_ON
+        // NOTE this appends |KGVG for Key-Good-Value-Good or
+        // |KBVB for Key-Bad-Value-Bad or some combination thereof
+        // depending on which values and keys were recognized properly
         appendToSerialDataBuffer(124);
         appendToSerialDataBuffer(75);
         if (valid_key) appendToSerialDataBuffer(71);
@@ -226,7 +241,7 @@ int M800Controller::processSerialData(byte b) {
       }
     #endif
     if (var_counter - 2 != var_used) {
-      Serial.printf("WARNING: failed to receive expected number (%d) of value/variable pairs, only %d\n", var_counter - 2, var_used);
+      Serial.printf("WARNING: failed to receive expected number (%d) of value/variable pairs, only %d\n", var_used, var_counter - 2);
       if (lcd) lcd->printLineTemp(1, "M800: incomplete msg");
       error_counter++;
     }
